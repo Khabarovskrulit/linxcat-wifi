@@ -1,0 +1,79 @@
+#!/bin/sh
+GRAPH="dialog"
+nettoolsdir="/usr/share/wifictl-tmp"
+echo "Создаю папку для хранения временных файлов ..."
+mkdir $nettoolsdir
+echo "Поднимаю интерфейс wlan0 и запускаю поиск сетей ..."
+echo -ne '[#######           ]      (23%)\r'
+ip link set wlan0 up
+sleep 1
+echo -ne '[##########        ]      (50%)\r'
+iwctl station wlan0 scan
+sleep 4
+echo -ne '[##################]      (100%)\r'
+$GRAPH --title "Мастер настройки беспроводных сетей (linxcat-wifi)" --clear \
+--yesno "У вас скрытая сеть?" 10 40
+case $? in
+0)
+hiddennet=1
+ $GRAPH --title "Мастер настройки беспроводных сетей (linxcat-wifi)" --clear \
+--inputbox "Введите имя сети : " 8 60
+ssid = $?
+ $GRAPH --title "Мастер настройки беспроводных сетей (linxcat-wifi)" --clear \
+--passwordbox "Введите ключ для $ssid : " 8 60
+wirelesskey = $?
+iwctl --passphrase "$wirelesskey" station wlan0 connect "$ssid"
+clear
+;;
+1)
+iwctl station wlan0 get-networks
+echo -n "Введите название сети для подключения : "
+read ssid
+   $GRAPH --title "Мастер настройки беспроводных сетей (linxcat-wifi)" --clear \
+--passwordbox "Введите ключ для $ssid : " 8 60
+wirelesskey = $?
+iwctl --passphrase "$wirelesskey" station wlan0 connect "$ssid"
+clear
+;;
+esac
+$GRAPH --title "Мастер настройки беспроводных сетей (linxcat-wifi)" --clear \
+--yesno "Использовать стандартный DHCP-клиент установленный в систему? (dhclient)" 10 40
+
+case $? in 
+
+0) 
+clear
+ echo "Поднимаю DHCP-клиент ...."
+dhclient 
+echo "Проверяю доступность интернета ..."
+ping -c 4 dvhab.ru
+;;
+1) 
+clear
+ echo "Выбран пункт - не использовать DHCP-клиент. Вам придется вручную задавать настройки сети."
+ sleep 1
+ ip link set up dev wlan0
+ $GRAPH --title "Мастер настройки беспроводных сетей (linxcat-wifi)" --clear \
+--inputbox "Введите статический ip адрес (CIDR) : \n Например 169.254.12.12/24" 8 60
+ip addr add $? dev wlan0
+addra = $?
+ $GRAPH --title "Мастер настройки беспроводных сетей (linxcat-wifi)" --clear \
+--inputbox "Введите основной шлюз : \n Например 169.254.1.1" 8 60
+ip route add default via $?
+gatewayinf=$?
+echo "Задаю DNS сервера ..."
+echo -e "nameserver 80.80.80.80\nnameserver 80.80.81.81" >/etc/resolv.conf
+echo 'Генерирую файл конфигурации сети ...'
+case $hiddennet in
+0)
+echo -e "Description=Automatic generated configuration File\nInterface=wlan0\nConnection=wireless\nSecurity=wpa\nESSID='$ssid'\nKey='$wirelesskey'\nIP=Static\nAddress='$addra'\nGateway='$gatewayinf'\nDNS=('80.80.80.80')" >/etc/netctl/static-gen.wlan0
+;;
+1)echo -e "Description=Automatic generated configuration File\nInterface=wlan0\nConnection=wireless\nSecurity=wpa\nESSID='$ssid'\nKey='$wirelesskey'\nIP=Static\nAddress='$addra'\nGateway='$gatewayinf'\nDNS=('80.80.80.80')\nHidden=1" >/etc/netctl/static-gen.wlan0
+;;
+esac
+;;
+ 255)
+ echo "Нажата клавиша ESC. Выхожу из программы ..."
+;;
+esac
+exit
